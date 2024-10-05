@@ -6,12 +6,22 @@ import Principal "mo:base/Principal";
 import Time "mo:base/Time";
 
 import CertifiedData "mo:base/CertifiedData";
+import Nat64 "mo:base/Nat64";
 import CertTree "mo:cert/CertTree";
 
 import ICRC1 "mo:icrc1-mo/ICRC1";
+import Account "mo:icrc1-mo/ICRC1/Account";
 import ICRC2 "mo:icrc2-mo/ICRC2";
 import ICRC3 "mo:icrc3-mo/";
 import ICRC4 "mo:icrc4-mo/ICRC4";
+
+///Custom ICDevs Token Code
+import Types "Types";
+import Blob "mo:base/Blob";
+import Error "mo:base/Error";
+import Int "mo:base/Int";
+import ICPTypes "ICPTypes";
+
 
 shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc1 : ?ICRC1.InitArgs;
@@ -20,6 +30,8 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     icrc4 : ?ICRC4.InitArgs;
   }
 ) = this{
+
+    let Set = ICRC1.Set;
 
     let default_icrc1_args : ICRC1.InitArgs = {
       name = ?"PANN Token";
@@ -59,7 +71,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       maxArchivePages = 62500;
       archiveIndexType = #Stable;
       maxRecordsToArchive = 8000;
-      archiveCycles = 20_000_000_000_000;
+      archiveCycles = 6_000_000_000_000;
       archiveControllers = null; //??[put cycle ops prinicpal here];
       supportedBlocks = [
         {
@@ -149,7 +161,6 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
     stable let icrc3_migration_state = ICRC3.init(ICRC3.initialState(), #v0_1_0(#id), icrc3_args, _owner);
     stable let cert_store : CertTree.Store = CertTree.newStore();
     let ct = CertTree.Ops(cert_store);
-
 
     stable var owner = _owner;
 
@@ -396,6 +407,191 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       };
   };
 
+  private func time64() : Nat64 {
+    Nat64.fromNat(Int.abs(Time.now()));
+  };
+
+  stable var bonus : Nat = 1000_0000_0000;
+  stable var bonusDen : Nat = 1_0000_0000;
+  stable var mintedCount = 0;
+  stable var mintedGoal = 1_000_000_0000_0000;
+
+  public shared ({ caller }) func mintFromICP(args : Types.MintFromICPArgs) : async ICRC1.TransferResult {
+
+      if(args.amount < 1000000) {
+        D.trap("Minimum mint amount is 0.01 ICP");
+      };
+
+      let ICPLedger : ICPTypes.Service = actor("ryjl3-tyaaa-aaaaa-aaaba-cai");
+
+      let result = try{
+        await ICPLedger.icrc2_transfer_from({
+          to = {
+            owner = Principal.fromActor(this);
+            subaccount = null;
+          };
+          fee = null;
+          spender_subaccount = null;
+          from = {
+            owner = caller;
+            subaccount = args.source_subaccount;
+          };
+          memo = ?Blob.toArray("\a4\c5\f0\4e\cc\e9\83\08\53\fc\7d\2b\e1\fe\ba\03\f1\e3\d6\2a\26\25\96\e3\bb\64\e2\ec\4d\20\36\13" : Blob); //"ICDevs Donation"
+          created_at_time = ?time64();
+          amount = args.amount-10000;
+        });
+      } catch(e){
+        D.trap("cannot transfer from failed" # Error.message(e));
+      };
+
+      let block = switch(result){
+        case(#Ok(block)) block;
+        case(#Err(err)){
+            D.trap("cannot transfer from failed" # debug_show(err));
+        };
+      };
+
+
+      let mintingAmount = (bonus/bonusDen) * args.amount;
+      mintedCount += mintingAmount;
+
+      //recalculate bonus
+      if(mintedCount > mintedGoal){
+        bonus := bonus/2;
+        mintedCount := 0;
+      };
+
+      let newtokens = await* icrc1().mint_tokens(Principal.fromActor(this), {
+        to = switch(args.target){
+            case(null){
+              {
+                owner = caller;
+                subaccount = null;
+              }
+            };
+            case(?val) {
+              {
+                owner = val.owner;
+                subaccount = switch(val.subaccount){
+                  case(null) null;
+                  case(?val) ?Blob.fromArray(val);
+                };
+              }
+            };
+          };               // The account receiving the newly minted tokens.
+        amount = mintingAmount;           // The number of tokens to mint.
+        created_at_time = ?time64();
+        memo = ?("\a4\c5\f0\4e\cc\e9\83\08\53\fc\7d\2b\e1\fe\ba\03\f1\e3\d6\2a\26\25\96\e3\bb\64\e2\ec\4d\20\36\13" : Blob); //"ICDevs Donation"
+      });
+
+
+      let treasurytokens = await* icrc1().mint_tokens(Principal.fromActor(this), {
+        to = {
+          owner = Principal.fromText("6b6d3-c6fka-fermk-mgfye-d2klj-krchc-ix2mt-6gl4i-ivb5c-czkvg-gae");
+          subaccount = null;
+        };               // The account receiving the newly minted tokens.}
+        amount = mintingAmount;           // The number of tokens to mint.
+        created_at_time = ?time64();
+        memo = ?("\8b\dc\f7\7f\10\d0\47\a8\9c\1e\f9\45\b0\5a\9d\f5\7a\18\af\b3\e0\f2\a0\f0\7c\d8\d6\77\a6\e5\8c\27" : Blob); //"Treasury Mint"
+      });
+
+      return switch(newtokens){
+        case(#trappable(val)) val;
+        case(#awaited(val)) val;
+        case(#err(#trappable(err))) D.trap(err);
+        case(#err(#awaited(err))) D.trap(err);
+      };
+
+  };
+
+  public query func stats() : async { 
+      mintedEpoch : Nat;
+      bonusEpoch : Nat;
+      bonusDenEpoch : Nat;
+      mintedGoalEpoch : Nat;
+      totalSupply : Nat;
+      holders : Nat;
+  }{
+    return {
+      mintedEpoch = mintedCount;
+      bonusEpoch = bonus;
+      bonusDenEpoch = bonusDen;
+      mintedGoalEpoch = mintedGoal;
+      totalSupply = icrc1().total_supply();
+      holders = ICRC1.Map.size(icrc1().get_state().accounts);
+    };
+  };
+
+  public query func holders(min:?Nat, max: ?Nat, prev: ?ICRC1.Account, take: ?Nat) : async  
+    [(ICRC1.Account, Nat)]
+  {
+
+    let results = ICRC1.Vector.new<(ICRC1.Account, Nat)>();
+    let (bFound_, targetAccount) = switch(prev){
+      case(null) (true, {owner = Principal.fromActor(this); subaccount = null});
+      case(?val) (false, val);
+    };
+
+    var bFound : Bool = bFound_;
+
+    let takeVal = switch(take){
+      case(null) 1000; //default take
+      case(?val) val;
+    };
+
+    label search for(thisAccount in ICRC1.Map.entries(icrc1().get_state().accounts)){
+      if(bFound){
+        if(ICRC1.Vector.size(results) >= takeVal){
+          break search;
+        };
+        
+      } else {
+        if(ICRC1.account_eq(targetAccount, thisAccount.0)){
+          bFound := true;
+        } else {
+          continue search;
+        };
+      };
+      let minSearch = switch(min){
+        case(null) 0;
+        case(?val) val;
+      };
+      let maxSearch = switch(max){
+        case(null) 20_000_000_0000_0000;  //our max supply is far less than 20M
+        case(?val) val;
+      };
+      if(thisAccount.1 >= minSearch and thisAccount.1 <= maxSearch)  ICRC1.Vector.add(results, (thisAccount.0, thisAccount.1));
+    };
+
+    return ICRC1.Vector.toArray(results);
+  };
+
+  
+
+  public shared ({ caller }) func withdrawICP(amount : Nat64) : async Nat64 {
+
+    if(amount < 2_0000_0000){
+      D.trap("Minimum withdrawal amount is 2 ICP");
+    };
+
+      let ICPLedger : ICPTypes.Service = actor("ryjl3-tyaaa-aaaaa-aaaba-cai");
+
+      let result = try{
+        await ICPLedger.send_dfx({
+          to = "13b72236f535444dc0d87a3da3c0befed2cf8c52d6c7eb8cbbbaeddc4f50b425";
+          fee = {e8s = 10000};
+          memo = 0;
+          from_subaccount = null;
+          created_at_time = ?{timestamp_nanos = time64()};
+          amount= {e8s = amount-20000};
+        });
+      } catch(e){
+        D.trap("cannot transfer from failed" # Error.message(e));
+      };
+
+      result;
+  };
+
   public shared ({ caller }) func burn(args : ICRC1.BurnArgs) : async ICRC1.TransferResult {
       switch( await*  icrc1().burn_tokens(caller, args, false)){
         case(#trappable(val)) val;
@@ -517,13 +713,13 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       let test3 = icrc3().stats();
 
       //uncomment the following line to register the transfer_listener
-      //icrc1().register_token_transferred_listener<system>("my_namespace", transfer_listener);
+      //icrc1().register_token_transferred_listener("my_namespace", transfer_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc2().register_token_approved_listener<system>("my_namespace", approval_listener);
+      //icrc2().register_token_approved_listener("my_namespace", approval_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc2().register_transfer_from_listener<system>("my_namespace", transfer_from_listener);
+      //icrc1().register_transfer_from_listener("my_namespace", transfer_from_listener);
     };
     _init := true;
   };
@@ -545,7 +741,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
       //icrc2().register_token_approved_listener("my_namespace", approval_listener);
 
       //uncomment the following line to register the transfer_listener
-      //icrc2().register_transfer_from_listener("my_namespace", transfer_from_listener);
+      //icrc1().register_transfer_from_listener("my_namespace", transfer_from_listener);
   };
 
 };
