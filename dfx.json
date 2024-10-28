@@ -106,7 +106,7 @@
       "type": "custom",
       "wasm": ""
     },
-    "prodtoken": {
+    "paidatoken": {
       "args": "--incremental-gc --release",
       "gzip": true,
       "main": "src/Token.mo",

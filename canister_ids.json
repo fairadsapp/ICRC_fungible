@@ -1,8 +1,5 @@
 {
-  "allowlist": {
-    "ic": "q65jm-giaaa-aaaam-qbfiq-cai"
-  },
-  "prodtoken": {
-    "ic": "qx6cq-qaaaa-aaaam-qbfja-cai"
+  "paidatoken": {
+    "ic": "vyttn-eiaaa-aaaan-qzn5a-cai"
   }
 }

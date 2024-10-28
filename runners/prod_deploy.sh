@@ -37,7 +37,7 @@ ADMIN_PRINCIPAL=$(dfx identity get-principal)
 dfx build --network ic token --check
 
 # Deploy the canister with the specified configuration.
-dfx canister --network ic install --mode install --wasm .dfx/ic/canisters/prodtoken/prodtoken.wasm.gz --argument "(opt record {icrc1 = opt record {
+dfx canister --network ic install --mode install --wasm .dfx/ic/canisters/paidatoken/prodtoken.wasm.gz --argument "(opt record {icrc1 = opt record {
   name = opt \"$TOKEN_NAME\";
   symbol = opt \"$TOKEN_SYMBOL\";
   logo = opt \"$TOKEN_LOGO\";

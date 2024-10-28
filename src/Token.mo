@@ -428,7 +428,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
   public shared ({ caller }) func mintFromICP(args : Types.MintFromICPArgs) : async ICRC1.TransferResult {
 
       if(args.amount < 1000000) {
-        D.trap("Minimum mint amount is 0.01 PANN");
+        D.trap("Minimum mint amount is 0.01 PAIDA");
       };
 
       let ICPLedger : ICPTypes.Service = actor("ryjl3-tyaaa-aaaaa-aaaba-cai");
@@ -496,7 +496,7 @@ shared ({ caller = _owner }) actor class Token  (args: ?{
 
       let treasurytokens = await* icrc1().mint_tokens(Principal.fromActor(this), {
         to = {
-          owner = Principal.fromText("6b6d3-c6fka-fermk-mgfye-d2klj-krchc-ix2mt-6gl4i-ivb5c-czkvg-gae");
+          owner = Principal.fromText("ssgtn-bqzhm-kofis-sqfha-k4sux-ii3sm-iyube-qr6pf-tdgpd-3a73d-mqe");
           subaccount = null;
         };               // The account receiving the newly minted tokens.}
         amount = mintingAmount;           // The number of tokens to mint.
